@@ -61,25 +61,36 @@ void print_array_sum(float C[NI*NJ])
 static
 void kernel_gemm(float C[NI*NJ], float A[NI*NK], float B[NK*NJ], float alpha, float beta)
 {
-  int i, j, k;
+  int i, j, k, ii, jj, kk;
+  int tile_sz = 64;
 
 // => Form C := alpha*A*B + beta*C,
 //A is NIxNK
 //B is NKxNJ
 //C is NIxNJ
-//#pragma omp parallel for private(j,k) //* Strategy 1: Parallelize the outermost i loop
-  for (i = 0; i < NI; i++) {
-  #pragma omp parallel for private(j) //*Strategy 2: Parallelize the j loop 
-    for (j = 0; j < NJ; j++) {
-      C[i*NJ+j] *= beta;
-    }
-  #pragma omp parallel for private(j)//*Strategy 2: Parallelize the j loop 
-    for (j = 0; j < NJ; j++) { 
-      for (k = 0; k < NK; ++k) {
-	C[i*NJ+j] += alpha * A[i*NK+k] * B[k*NJ+j];
+
+  for (ii = 0; ii < NI; ii += tile_sz) {
+      for (jj = 0; jj < NJ; jj += tile_sz) {
+          // Scale C by beta in tiles
+          for (i = ii; i < ii + tile_sz; i++) {
+              for (j = jj; j < jj + tile_sz; j++) {
+                  C[i*NJ + j] *= beta;
+              }
+          }
+
+          // Multiply and accumulate in tiles
+          for (kk = 0; kk < NK; kk += tile_sz) {
+              for (i = ii; i < ii + tile_sz; i++) {
+                  for (j = jj; j < jj + tile_sz; j++) {
+                      for (k = kk; k < kk + tile_sz; k++) {
+                          C[i*NJ + j] += alpha * A[i*NK + k] * B[k*NJ + j];
+                      }
+                  }
+              }
+          }
       }
-    }
   }
+
 }
 
 int main(int argc, char** argv)
