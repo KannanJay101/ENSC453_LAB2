@@ -52,9 +52,7 @@ static void print_array_sum(float C[NI * NJ])
   printf("sum of C array = %f\n", sum);
 }
 
-//* Note: This CPU contains -> 6 P-Cores (Fast) , 8 E-Cores (Slower),  6 P-Cores + 8 E-Cores = 20 Threads in Total
 
-#define Block_Size  = 32 //* making block size 32, Utilzing tiling concept to use the data size that fits in the cache 
 
 //! Main computational kernel. The whole function will be timed,  including the call and return. */
 // static void kernel_gemm(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta)
@@ -67,7 +65,7 @@ static void print_array_sum(float C[NI * NJ])
 //   // C is NIxNJ
 //   // #pragma omp parallel for private(j,k)
 
-//   //* Tiling (Do mulitplication in small chunks that fit in the cache), therefore the CPU reuses data instead of doing again
+
 
  
 //   for (i = 0; i < NI; i++)
@@ -86,6 +84,11 @@ static void print_array_sum(float C[NI * NJ])
 //     }
 //   }
 // }
+
+//* Note: This CPU contains -> 6 P-Cores (Fast) , 8 E-Cores (Slower),  6 P-Cores + 8 E-Cores = 20 Threads in Total
+//* Tiling (Do mulitplication in small chunks that fit in the cache), therefore the CPU reuses data instead of doing again
+
+#define Block_Size  = 32 //* making block size 32, Utilzing tiling concept to use the data size that fits in the cache 
 
 //! New kernal_gemm for lab 2 
 static void kernel_gemm(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta)
