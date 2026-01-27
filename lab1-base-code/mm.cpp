@@ -62,36 +62,107 @@ static
 void kernel_gemm(float C[NI*NJ], float A[NI*NK], float B[NK*NJ], float alpha, float beta)
 {
   int i, j, k, ii, jj, kk;
-  int tile_sz = 64;
+  int tile_sz = 16;
 
 // => Form C := alpha*A*B + beta*C,
 //A is NIxNK
 //B is NKxNJ
 //C is NIxNJ
 
-  for (ii = 0; ii < NI; ii += tile_sz) {
-      for (jj = 0; jj < NJ; jj += tile_sz) {
-          // Scale C by beta in tiles
-          for (i = ii; i < ii + tile_sz; i++) {
-              for (j = jj; j < jj + tile_sz; j++) {
-                  C[i*NJ + j] *= beta;
-              }
-          }
+/*
+// Tiling of the i and j loops
+  for (i = 0; i < NI; i += tile_sz) {
+    for (j = 0; j < NJ; j += tile_sz) {
 
-          // Multiply and accumulate in tiles
-          for (kk = 0; kk < NK; kk += tile_sz) {
-              for (i = ii; i < ii + tile_sz; i++) {
-                  for (j = jj; j < jj + tile_sz; j++) {
-                      for (k = kk; k < kk + tile_sz; k++) {
-                          C[i*NJ + j] += alpha * A[i*NK + k] * B[k*NJ + j];
-                      }
-                  }
-              }
-          }
+      for (ii = i; ii < i + tile_sz; ii++) {
+        for (jj = j; jj < j + tile_sz; jj++) {
+          C[ii*NJ + jj] *= beta;
+        }
       }
+
+      for (k = 0; k < NK; k++) {
+        for (ii = i; ii < i + tile_sz; ii++) {
+          for (jj = j; jj < j + tile_sz; jj++) {
+            C[ii*NJ + jj] += alpha * A[ii*NK + k] * B[k*NJ + jj];
+          }
+        }
+      }
+
+    }
+  }
+*/
+
+
+/*
+// Tiling of the i and k loops
+  for (i = 0; i < NI; i += tile_sz) {
+    for (j = 0; j < NJ; j++) {
+
+      for (ii = i; ii < i + tile_sz; ii++) {
+        C[ii*NJ + j] *= beta;
+      }
+
+      for (k = 0; k < NK; k += tile_sz) {
+
+        for (ii = i; ii < i + tile_sz; ii++) {
+          for (kk = k; kk < k + tile_sz; kk++) {
+            C[ii*NJ + j] += alpha * A[ii*NK + kk] * B[kk*NJ + j];
+          }
+        }
+      }
+    }
+  }
+*/
+ 
+/*
+//Tiling of j and k loops
+  for (i = 0; i < NI; i++) {
+    for (j = 0; j < NJ; j += tile_sz) {
+
+      for (jj = j; jj < j + tile_sz; jj++) {
+        C[i*NJ + jj] *= beta;
+      }
+
+      for (k = 0; k < NK; k += tile_sz) {
+
+        for (jj = j; jj < j + tile_sz; jj++) {
+          for (kk = k; kk < k + tile_sz; kk++) {
+            C[i*NJ + jj] += alpha * A[i*NK + kk] * B[kk*NJ + jj];
+          }
+        }
+      }
+
+    }
+  }
+*/
+
+//Tiling of all three (i, j, k) loops
+  for (i = 0; i < NI; i += tile_sz) {
+    for (j = 0; j < NJ; j += tile_sz) {
+
+      for (ii = i; ii < i + tile_sz; ii++) {
+        for (jj = j; jj < j + tile_sz; jj++) {
+          C[ii*NJ + jj] *= beta;
+        }
+      }
+
+      for (k = 0; k < NK; k += tile_sz) {
+
+        for (ii = i; ii < i + tile_sz; ii++) {
+          for (jj = j; jj < j + tile_sz; jj++) {
+            for (kk = k; kk < k + tile_sz; kk++) {
+              C[ii*NJ + jj] += alpha * A[ii*NK + kk] * B[kk*NJ + jj];
+            }
+          }
+        }
+      }
+
+    }
   }
 
+
 }
+
 
 int main(int argc, char** argv)
 {
