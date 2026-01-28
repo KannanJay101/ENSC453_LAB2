@@ -3,9 +3,9 @@
 #include <omp.h>
 #include "my_timer.h"
 
-#define NI 2048
-#define NJ 2048
-#define NK 2048
+#define NI 4096
+#define NJ 4096
+#define NK 4096
 
 /* Array initialization. */
 static void init_array(float C[NI * NJ], float A[NI * NK], float B[NK * NJ])
@@ -52,41 +52,16 @@ static void print_array_sum(float C[NI * NJ])
   printf("sum of C array = %f\n", sum);
 }
 
-//! Main computational kernel. The whole function will be timed,  including the call and return. */
-// static void kernel_gemm(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta)
-// {
-//   int i, j, k;
 
-//   // => Form C := alpha*A*B + beta*C,
-//   // A is NIxNK
-//   // B is NKxNJ
-//   // C is NIxNJ
-//   // #pragma omp parallel for private(j,k)
-
-//   for (i = 0; i < NI; i++)
-//   {
-
-//     for (j = 0; j < NJ; j++)
-//     {
-//       C[i * NJ + j] *= beta;
-//     }
-//     for (j = 0; j < NJ; j++)
-//     {
-//       for (k = 0; k < NK; ++k)
-//       {
-//         C[i * NJ + j] += alpha * A[i * NK + k] * B[k * NJ + j];
-//       }
-//     }
-//   }
-// }
 
 //* Note: This CPU contains -> 6 P-Cores (Fast) , 8 E-Cores (Slower),  6 P-Cores + 8 E-Cores = 20 Threads in Total
 //* Tiling (Do mulitplication in small chunks that fit in the cache), therefore the CPU reuses data instead of redoing the data again
 
-#define BS 32 //*Defining new block size, 2048 x 2048 =  ~16 MB, They do not fit in the CPU Cache, so break down matrices down
+#define BS 1 //*Defining new block size, 2048 x 2048 =  ~16 MB, They do not fit in the CPU Cache, so break down matrices down
 
 #define min(a, b) (((a) < (b)) ? (a) : (b)) //* Logic:  If a < b return a, if false return b (Helper macro to ensure we don't go out of bounds)
 
+//! Main computational kernel. The whole function will be timed, including the call and return. */
 static void kernel_gemm(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta) //* => (C = alpha*A*B + beta*C)
 {
   int i, j, k;    // Inner loop counters (workers)
