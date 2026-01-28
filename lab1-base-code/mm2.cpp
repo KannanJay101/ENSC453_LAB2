@@ -89,57 +89,30 @@ static void print_array_sum(float C[NI * NJ])
 
 static void kernel_gemm(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta) //* => (C = alpha*A*B + beta*C)
 {
-  int i, j, k;    // Inner loop counters (workers)
-  int ii, jj, kk; // Outer loop counters (tile movers)
+  //*Outer Loop
+  // -------------------------------------------------------
+  // THE OPTIMIZED ALGORITHM
+  // -------------------------------------------------------
+  int ii, jj, kk, i, j, k;
 
-  //* Frist scaling Matrix C by beta and using parallezation to quickly compute the first part of the computation and it will not be included in the main for loop
-  //* Privatizing 'j' prevents a Race Condition so threads do not overwrite the shared variable.(ex: Thread A writes to j and Thread B will overwrite j before thread A is done)
-
-  //* 1. Handle Beta Scaling (Matrix C = C * beta)
-  //* We do this first so we don't have to multiply by beta inside the critical path
-#pragma omp parallel for private(i, j)
-  for (i = 0; i < NI; i++)
-  {
-    for (j = 0; j < NJ; j++)
-    {
-
-      C[i * NJ + j] *= beta;
-    }
-  }
-
-// 2. Tiled Matrix Multiplication (C += alpha * A * B)
-// Parallelize the outermost loop (distribute tiles to threads)
-
-//* Note: private(jj, kk, i, j, k) -> Outer Loops (ii, jj, kk) breaking the data size to 2048 -> 32
-#pragma omp parallel for private(jj, kk, i, j, k)
-  // #pragma omp parallel for num_threads(12) private(jj,kk,i,j,k)
+#pragma omp parallel for private(ii, jj, kk, i, j, k)
   for (ii = 0; ii < NI; ii += BS)
   {
-
-    // Iterate through tiles of Column J
     for (jj = 0; jj < NJ; jj += BS)
     {
-
-      // Iterate through tiles of Common Dimension K
       for (kk = 0; kk < NK; kk += BS)
       {
 
-        // --- INNER LOOPS (Process ONE 32x32 Tile) ---
-
-        // Loop 'i': Rows of the tile
+        // Inner Tile Processing
         for (i = ii; i < min(ii + BS, NI); i++)
         {
-
-          // Loop 'k': Columns of A / Rows of B
-          // REORDERED! Putting 'k' here is better for cache than 'j'
           for (k = kk; k < min(kk + BS, NK); k++)
           {
 
-            // Optimization: Load A value once, keep in register
+            // Register Optimization
             float val_A = alpha * A[i * NK + k];
 
-// Loop 'j': Columns of the tile
-// This is Stride-1 (Sequential) access for C and B -> Great for Vectorization
+// Vectorization
 #pragma omp simd
             for (j = jj; j < min(jj + BS, NJ); j++)
             {
