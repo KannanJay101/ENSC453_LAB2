@@ -100,9 +100,10 @@ static void kernel_gemm(float C[NI*NJ], float A[NI*NK], float B[NK*NJ], float al
 
   // 1. Handle Beta Scaling (C = C * beta)
   // We do this first so we don't have to multiply by beta inside the critical path
-  //* Frist scaling Matrix C by beta and using parallezation to quickly compute the first part of the computation
-  //* 
-  #pragma omp parallel for private(i, j) //* 
+
+//* Frist scaling Matrix C by beta and using parallezation to quickly compute the first part of the computation
+//* Privatizing 'j' prevents a Race Condition so threads do not overwrite the shared variable.(ex: Thread A writes to j and Thread B will overwrite j before thread A is done)
+  #pragma omp parallel for private(i,j) 
   for (i = 0; i < NI; i++) {
     for (j = 0; j < NJ; j++) {
       
