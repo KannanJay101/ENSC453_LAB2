@@ -112,21 +112,19 @@ static void kernel_gemm(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], fl
 
 //* Note: private(jj, kk, i, j, k) -> Outer Loops (ii, jj, kk) breaking the data size to 2048 -> 32
 #pragma omp parallel for private(jj, kk, i, j, k)
-  // #pragma omp parallel for num_threads(12) private(jj,kk,i,j,k)
-  for (ii = 0; ii < NI; ii += BS)
+  for (ii = 0; ii < NI; ii += BS) //* Increamtning the loop by 32, cause we want to do computation is 32 size chunks to have optimal speed
   {
 
-    // Iterate through tiles of Column J
-    for (jj = 0; jj < NJ; jj += BS)
-    {
+    //* Iterate through tiles of Column J
+    for (jj = 0; jj < NJ; jj += BS) 
 
-      // Iterate through tiles of Common Dimension K
-      for (kk = 0; kk < NK; kk += BS)
+      //* Iterate through tiles of Common Dimension K
+      for (kk = 0; kk < NK; kk += BS) 
       {
 
-        // --- INNER LOOPS (Process ONE 32x32 Tile) ---
+        //* --- INNER LOOPS (Process ONE 32x32 Tile) ---
 
-        // Loop 'i': Rows of the tile
+        //* Loop 'i': Rows of the tile
         for (i = ii; i < min(ii + BS, NI); i++)
         {
 
@@ -139,8 +137,8 @@ static void kernel_gemm(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], fl
             float val_A = alpha * A[i * NK + k];
 
 // Loop 'j': Columns of the tile
-// This is Stride-1 (Sequential) access for C and B -> Great for Vectorization
-#pragma omp simd
+// This is Stride-1 (Sequential) access for C and B -> Great for Vectorization 
+#pragma omp simd //* Vectorization applies math simultaneously all at once to compute faster 
             for (j = jj; j < min(jj + BS, NJ); j++)
             {
               C[i * NJ + j] += val_A * B[k * NJ + j];
@@ -150,7 +148,7 @@ static void kernel_gemm(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], fl
       }
     }
   }
-}
+
 
 int main(int argc, char **argv)
 {
