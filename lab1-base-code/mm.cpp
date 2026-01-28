@@ -86,40 +86,65 @@ static void print_array_sum(float C[NI * NJ])
 // }
 
 //* Note: This CPU contains -> 6 P-Cores (Fast) , 8 E-Cores (Slower),  6 P-Cores + 8 E-Cores = 20 Threads in Total
-//* Tiling (Do mulitplication in small chunks that fit in the cache), therefore the CPU reuses data instead of doing again
+//* Tiling (Do mulitplication in small chunks that fit in the cache), therefore the CPU reuses data instead of redoing the data again
 
-#define Block_Size  = 32 //* making block size 32, Utilzing tiling concept to use the data size that fits in the cache 
+#define BS 32 //*Defining new block size 
 
-//! New kernal_gemm for lab 2 
-static void kernel_gemm(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta)
+// Helper macro to ensure we don't go out of bounds
+#define min(a,b) (((a)<(b))?(a):(b)) 
+
+static void kernel_gemm(float C[NI*NJ], float A[NI*NK], float B[NK*NJ], float alpha, float beta)
 {
-  int i, j, k;
+  int i, j, k;      // Inner loop counters (workers)
+  int ii, jj, kk;   // Outer loop counters (tile movers)
 
-  // => Form C := alpha*A*B + beta*C,
-  // A is NIxNK
-  // B is NKxNJ
-  // C is NIxNJ
-  // #pragma omp parallel for private(j,k)
-
-  //! Tiling (Do mulitplication in small chunks that fit in the cache), therefore the CPU reuses data instead of doing again
-
- 
-  for (i = 0; i < NI; i++)
-  {
-
-    for (j = 0; j < NJ; j++)
-    {
-      C[i * NJ + j] *= beta;
+  // 1. Handle Beta Scaling (C = C * beta)
+  // We do this first so we don't have to multiply by beta inside the critical path
+  #pragma omp parallel for private(i, j)
+  for (i = 0; i < NI; i++) {
+    for (j = 0; j < NJ; j++) {
+      C[i*NJ+j] *= beta;
     }
-    for (j = 0; j < NJ; j++)
-    {
-      for (k = 0; k < NK; ++k)
-      {
-        C[i * NJ + j] += alpha * A[i * NK + k] * B[k * NJ + j];
+  }
+
+  // 2. Tiled Matrix Multiplication (C += alpha * A * B)
+  // Parallelize the outermost loop (distribute tiles to threads)
+
+  //* Note: private(jj, kk, i, j, k) ->
+  #pragma omp parallel for private(jj, kk, i, j, k) 
+  for (ii = 0; ii < NI; ii += BS) {
+    
+    // Iterate through tiles of Column J
+    for (jj = 0; jj < NJ; jj += BS) {
+      
+      // Iterate through tiles of Common Dimension K
+      for (kk = 0; kk < NK; kk += BS) {
+
+        // --- INNER LOOPS (Process ONE 32x32 Tile) ---
+        
+        // Loop 'i': Rows of the tile
+        for (i = ii; i < min(ii + BS, NI); i++) {
+          
+          // Loop 'k': Columns of A / Rows of B
+          // REORDERED! Putting 'k' here is better for cache than 'j'
+          for (k = kk; k < min(kk + BS, NK); k++) {
+            
+            // Optimization: Load A value once, keep in register
+            float val_A = alpha * A[i*NK+k];
+
+            // Loop 'j': Columns of the tile
+            // This is Stride-1 (Sequential) access for C and B -> Great for Vectorization
+            #pragma omp simd
+            for (j = jj; j < min(jj + BS, NJ); j++) {
+              C[i*NJ+j] += val_A * B[k*NJ+j];
+            }
+          }
+        }
       }
     }
   }
 }
+
 
 int main(int argc, char **argv)
 {
