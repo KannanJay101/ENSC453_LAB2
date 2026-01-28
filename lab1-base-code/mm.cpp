@@ -100,18 +100,24 @@ static void kernel_gemm(float C[NI*NJ], float A[NI*NK], float B[NK*NJ], float al
 
   // 1. Handle Beta Scaling (C = C * beta)
   // We do this first so we don't have to multiply by beta inside the critical path
-  #pragma omp parallel for private(i, j)
+  //* Frist scaling Matrix C by beta and using parallezation to quickly compute the first part of the computation
+  //* 
+  #pragma omp parallel for private(i, j) //* 
   for (i = 0; i < NI; i++) {
     for (j = 0; j < NJ; j++) {
+      
       C[i*NJ+j] *= beta;
     }
   }
+
+  
 
   // 2. Tiled Matrix Multiplication (C += alpha * A * B)
   // Parallelize the outermost loop (distribute tiles to threads)
 
   //* Note: private(jj, kk, i, j, k) ->
   #pragma omp parallel for private(jj, kk, i, j, k) 
+  //#pragma omp parallel for num_threads(12) private(jj,kk,i,j,k)
   for (ii = 0; ii < NI; ii += BS) {
     
     // Iterate through tiles of Column J
@@ -134,7 +140,7 @@ static void kernel_gemm(float C[NI*NJ], float A[NI*NK], float B[NK*NJ], float al
 
             // Loop 'j': Columns of the tile
             // This is Stride-1 (Sequential) access for C and B -> Great for Vectorization
-            #pragma omp simd
+            #pragma omp simd 
             for (j = jj; j < min(jj + BS, NJ); j++) {
               C[i*NJ+j] += val_A * B[k*NJ+j];
             }
