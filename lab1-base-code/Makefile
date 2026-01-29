@@ -1,4 +1,4 @@
-all: mm mm2
+all: mm 
 
 mm: mm.cpp
 	g++ -O2 -fopenmp mm.cpp -o mm
