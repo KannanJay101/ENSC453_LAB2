@@ -57,7 +57,7 @@ static void print_array_sum(float C[NI * NJ])
 //* Note: This CPU contains -> 6 P-Cores (Fast) , 8 E-Cores (Slower),  6 P-Cores + 8 E-Cores = 20 Threads in Total
 //* Tiling (Do mulitplication in small chunks that fit in the cache), therefore the CPU reuses data instead of redoing the data again
 
-#define BS 1 //*Defining new block size, 2048 x 2048 =  ~16 MB, They do not fit in the CPU Cache, so break down matrices down
+#define BS 64 //*Defining new block size, 2048 x 2048 =  ~16 MB, They do not fit in the CPU Cache, so break down matrices down
 
 #define min(a, b) (((a) < (b)) ? (a) : (b)) //* Logic:  If a < b return a, if false return b (Helper macro to ensure we don't go out of bounds)
 
