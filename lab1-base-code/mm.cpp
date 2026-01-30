@@ -53,9 +53,9 @@ static void kernel_gemm_2d_ij(float C[NI * NJ], float A[NI * NK], float B[NK * N
     {
 
       // 1. Beta Scaling (done inside the tile)
-      for (ii = i; ii < min(i + BS, NI); ii++)
+      for (ii = i; ii < i + BS; ii++)
       {
-        for (jj = j; jj < min(j + BS, NJ); jj++)
+        for (jj = j; jj < j + BS; jj++)
         {
           C[ii * NJ + jj] *= beta;
         }
@@ -65,9 +65,9 @@ static void kernel_gemm_2d_ij(float C[NI * NJ], float A[NI * NK], float B[NK * N
       // Note: 'k' loop runs fully (0 to NK). This causes cache thrashing.
       for (k = 0; k < NK; k++)
       {
-        for (ii = i; ii < min(i + BS, NI); ii++)
+        for (ii = i; ii < i + BS; ii++)
         {
-          for (jj = j; jj < min(j + BS, NJ); jj++)
+          for (jj = j; jj < j + BS;  jj++)
           {
             C[ii * NJ + jj] += alpha * A[ii * NK + k] * B[k * NJ + jj];
           }
@@ -92,7 +92,7 @@ static void kernel_gemm_2d_ik(float C[NI * NJ], float A[NI * NK], float B[NK * N
     {
 
       // 1. Beta Scaling
-      for (ii = i; ii < min(i + BS, NI); ii++)
+      for (ii = i; ii < i + BS; ii++)
       {
         C[ii * NJ + j] *= beta;
       }
@@ -103,9 +103,9 @@ static void kernel_gemm_2d_ik(float C[NI * NJ], float A[NI * NK], float B[NK * N
       {
 
         // Inner loops
-        for (ii = i; ii < min(i + BS, NI); ii++)
+        for (ii = i; ii < i + BS; ii++)
         {
-          for (kk = k; kk < min(k + BS, NK); kk++)
+          for (kk = k; kk < k + BS; kk++)
           {
             C[ii * NJ + j] += alpha * A[ii * NK + kk] * B[kk * NJ + j];
           }
@@ -130,7 +130,7 @@ static void kernel_gemm_2d_jk(float C[NI * NJ], float A[NI * NK], float B[NK * N
     {
 
       // 1. Beta Scaling
-      for (jj = j; jj < min(j + BS, NJ); jj++)
+      for (jj = j; jj < j + BS; jj++)
       {
         C[i * NJ + jj] *= beta;
       }
@@ -141,9 +141,9 @@ static void kernel_gemm_2d_jk(float C[NI * NJ], float A[NI * NK], float B[NK * N
       {
 
         // Inner loops
-        for (jj = j; jj < min(j + BS, NJ); jj++)
+        for (jj = j; jj < j + BS; jj++)
         {
-          for (kk = k; kk < min(k + BS, NK); kk++)
+          for (kk = k; kk < k + BS; kk++)
           {
             C[i * NJ + jj] += alpha * A[i * NK + kk] * B[kk * NJ + jj];
           }
@@ -166,9 +166,9 @@ static void kernel_gemm_3D(float C[NI * NJ], float A[NI * NK], float B[NK * NJ],
     {
 
       // 1. Beta Scaling
-      for (ii = i; ii < min(i + BS, NI); ii++)
+      for (ii = i; ii < i + BS; ii++)
       {
-        for (jj = j; jj < min(j + BS, NJ); jj++)
+        for (jj = j; jj < j + BS; jj++)
         {
           C[ii * NJ + jj] *= beta;
         }
@@ -181,11 +181,11 @@ static void kernel_gemm_3D(float C[NI * NJ], float A[NI * NK], float B[NK * NJ],
         // Inner Loops: ii -> jj -> kk
         // This is "Naive" because accessing B[kk][jj] inside the innermost loop
         // might not be contiguous if loop orders aren't perfect.
-        for (ii = i; ii < min(i + BS, NI); ii++)
+        for (ii = i; ii < i + BS; ii++)
         {
-          for (jj = j; jj < min(j + BS, NJ); jj++)
+          for (jj = j; jj < j + BS; jj++)
           {
-            for (kk = k; kk < min(k + BS, NK); kk++)
+            for (kk = k; kk < k + BS; kk++)
             {
               C[ii * NJ + jj] += alpha * A[ii * NK + kk] * B[kk * NJ + jj];
             }
@@ -221,17 +221,17 @@ static void kernel_gemm3D_Optmized(float C[NI * NJ], float A[NI * NK], float B[N
       for (kk = 0; kk < NK; kk += BS)
       {
 
-        for (i = ii; i < min(ii + BS, NI); i++)
+        for (i = ii; i < ii + BS; i++)
         {
 
           // Optimization: Loop Order i-k-j (K is middle)
-          for (k = kk; k < min(kk + BS, NK); k++)
+          for (k = kk; k < kk + BS; k++)
           {
             float val_A = alpha * A[i * NK + k];
 
             // J is innermost (Stride-1 access) + SIMD
 #pragma omp simd
-            for (j = jj; j < min(jj + BS, NJ); j++)
+            for (j = jj; j < jj + BS; j++)
             {
               C[i * NJ + j] += val_A * B[k * NJ + j];
             }
@@ -255,9 +255,9 @@ static void kernel_gemm_vect(float C[NI * NJ], float A[NI * NK], float B[NK * NJ
     for (jj = 0; jj < NJ; jj += BS)
     {
       // Optimization 1: Initialize/Scale C only once per tile block
-      for (i = ii; i < min(ii + BS, NI); i++)
+      for (i = ii; i < ii + BS; i++)
       {
-        for (j = jj; j < min(jj + BS, NJ); j++)
+        for (j = jj; j < jj + BS; j++)
         {
           C[i * NJ + j] *= beta;
         }
@@ -265,13 +265,13 @@ static void kernel_gemm_vect(float C[NI * NJ], float A[NI * NK], float B[NK * NJ
 
       for (kk = 0; kk < NK; kk += BS)
       {
-        for (i = ii; i < min(ii + BS, NI); i++)
+        for (i = ii; i < ii + BS; i++)
         {
           // Cache the row offset of A and C
           int i_NK = i * NK;
           int i_NJ = i * NJ;
 
-          for (k = kk; k < min(kk + BS, NK); k++)
+          for (k = kk; k < kk + BS; k++)
           {
             // Optimization 2: Pre-calculate alpha * A[i][k]
             float val_A = alpha * A[i_NK + k];
@@ -279,7 +279,7 @@ static void kernel_gemm_vect(float C[NI * NJ], float A[NI * NK], float B[NK * NJ
 
 // Optimization 3: Explicit SIMD with alignment hint
 #pragma omp simd
-            for (j = jj; j < min(jj + BS, NJ); j++)
+            for (j = jj; j < jj + BS; j++)
             {
               C[i_NJ + j] += val_A * B[k_NJ + j];
             }
@@ -320,7 +320,7 @@ static void kernel_gemm_vect(float C[NI * NJ], float A[NI * NK], float B[NK * NJ
 //       // --- TRANSFORMATION 3: Loop Tiling (Blocking) ---
 //       for (kk = 0; kk < NK; kk += BS) {
 
-//         for (i = ii; i < min(ii + BS, NI); i++) {
+//         for (i = ii; i < ii + BS; i++) {
 
 //           // Optimization: Pre-calculate row offsets to avoid integer math in inner loop
 //           int i_NK = i * NK;
@@ -328,7 +328,7 @@ static void kernel_gemm_vect(float C[NI * NJ], float A[NI * NK], float B[NK * NJ
 
 //           // --- TRANSFORMATION 4: Loop Permutation (i-k-j) ---
 //           // Swapping 'j' and 'k' makes the innermost access Sequential (Stride-1).
-//           for (k = kk; k < min(kk + BS, NK); k++) {
+//           for (k = kk; k < kk + BS; k++) {
 
 //             // Optimization: Hoist invariant load (alpha * A[i][k])
 //             float val_A = alpha * A[i_NK + k];
@@ -337,7 +337,7 @@ static void kernel_gemm_vect(float C[NI * NJ], float A[NI * NK], float B[NK * NJ
 //             // --- TRANSFORMATION 5: Loop Vectorization ---
 //             // Forces AVX2 instructions (8 floats per cycle).
 //             #pragma omp simd
-//             for (j = jj; j < min(jj + BS, NJ); j++) {
+//             for (j = jj; j < jj + BS; j++) {
 //               C[i_NJ + j] += val_A * B[k_NJ + j];
 //             }
 //           }
@@ -460,10 +460,10 @@ int main(int argc, char **argv)
   /* --- RUN THE KERNEL --- */
   /* UNCOMMENT ONE LINE BELOW TO TEST A SPECIFIC STRATEGY */
 
-  // kernel_gemm_2d_ij(C, A, B, 1.5, 2.5);        // Strategy 1: Tiling i, j
+   kernel_gemm_2d_ij(C, A, B, 1.5, 2.5);        // Strategy 1: Tiling i, j
   // kernel_gemm_2d_ik(C, A, B, 1.5, 2.5);      // Strategy 2: Tiling i, k
   // kernel_gemm_2d_jk(C, A, B, 1.5, 2.5);      // Strategy 3: Tiling j, k
-  kernel_gemm_3D(C, A, B, 1.5, 2.5);         // Strategy 4: Tiling i, j, k (Naive)
+  //kernel_gemm_3D(C, A, B, 1.5, 2.5);         // Strategy 4: Tiling i, j, k (Naive)
   // kernel_gemm3D_Optmized(C, A, B, 1.5, 2.5);
   // kernel_gemm_vect(C, A, B, 1.5, 2.5);
 
