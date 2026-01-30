@@ -40,8 +40,7 @@ static void print_array_sum(float C[NI * NJ])
 #define min(a, b) (((a) < (b)) ? (a) : (b))
 
 // ---------------------------------------------------------------------------
-// 1. FINAL OPTIMIZED VERSION (For Competition & Parallel Testing)
-//    Features: 3D Tiling + i-k-j Order + OpenMP Parallel + SIMD Vectorization
+// 1. FINAL OPTIMIZED VERSION (For Competition & Parallel Testing) 3D Tiling + i-k-j Order + OpenMP Parallel + SIMD Vectorization
 // ---------------------------------------------------------------------------
 static void kernel_gemm(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta)
 {
@@ -94,8 +93,6 @@ static void kernel_gemm(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], fl
 
 // ---------------------------------------------------------------------------
 // 2. STRATEGY 1: 2D TILING (For Report Comparison)
-//    Features: Blocks i and j only. 'k' loop is NOT tiled (Thrashing).
-//    Run this SINGLE THREADED for the report.
 // ---------------------------------------------------------------------------
 static void kernel_gemm_2d(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta)
 {
@@ -120,8 +117,6 @@ static void kernel_gemm_2d(float C[NI * NJ], float A[NI * NK], float B[NK * NJ],
         {
 
           float sum = 0.0f;
-          // THE PROBLEM: 'k' runs 0 to 4096 every time.
-          // Matrix A and B get evicted from cache constantly.
           for (k = 0; k < NK; k++)
           {
             sum += A[i * NK + k] * B[k * NJ + j];
@@ -135,8 +130,6 @@ static void kernel_gemm_2d(float C[NI * NJ], float A[NI * NK], float B[NK * NJ],
 
 // ---------------------------------------------------------------------------
 // 3. STRATEGY 2: 3D TILING NAIVE (For Report Comparison)
-//    Features: Blocks i, j, k (Good locality) but uses i-j-k order (Bad stride).
-//    Run this SINGLE THREADED for the report.
 // ---------------------------------------------------------------------------
 static void kernel_gemm_3d_naive(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta)
 {
