@@ -8,7 +8,7 @@
 #define NJ 4096
 #define NK 4096
 
-#define BS 256 // Tile Size
+#define BS 32 // Tile Size
 #define UNROLL 4
 
 #define min(a, b) (((a) < (b)) ? (a) : (b))
@@ -230,7 +230,7 @@ static void kernel_gemm3D_Optmized(float C[NI * NJ], float A[NI * NK], float B[N
             float val_A = alpha * A[i * NK + k];
 
             // J is innermost (Stride-1 access) + SIMD
-
+#pragma omp simd
             for (j = jj; j < min(jj + BS, NJ); j++)
             {
               C[i * NJ + j] += val_A * B[k * NJ + j];
@@ -463,7 +463,7 @@ int main(int argc, char **argv)
   // kernel_gemm_2d_ij(C, A, B, 1.5, 2.5);        // Strategy 1: Tiling i, j
   // kernel_gemm_2d_ik(C, A, B, 1.5, 2.5);      // Strategy 2: Tiling i, k
   // kernel_gemm_2d_jk(C, A, B, 1.5, 2.5);      // Strategy 3: Tiling j, k
-  // kernel_gemm_3D(C, A, B, 1.5, 2.5);         // Strategy 4: Tiling i, j, k (Naive)
+  kernel_gemm_3D(C, A, B, 1.5, 2.5);         // Strategy 4: Tiling i, j, k (Naive)
   // kernel_gemm3D_Optmized(C, A, B, 1.5, 2.5);
   // kernel_gemm_vect(C, A, B, 1.5, 2.5);
 
@@ -471,7 +471,7 @@ int main(int argc, char **argv)
   //kernel_gemm_final(C, A, B, 1.5, 2.5);
 
   //*Best Optmized Time
-   kernel_gemm(C, A, B, 1.5, 2.5);
+  // kernel_gemm(C, A, B, 1.5, 2.5);
 
   /* Stop and print timer. */
   toc(&timer, "kernel execution");
