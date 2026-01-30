@@ -1,22 +1,24 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <omp.h>
+#include <immintrin.h>
 #include "my_timer.h"
 
 #define NI 4096
 #define NJ 4096
 #define NK 4096
 
-#define BS 128 //Tile Size
+#define BS 256 // Tile Size
+#define UNROLL 4
 
 #define min(a, b) (((a) < (b)) ? (a) : (b))
 
-
+int i, j, k, ii, jj, kk;
 
 /* Array initialization. */
 static void init_array(float C[NI * NJ], float A[NI * NK], float B[NK * NJ])
 {
-  int i, j;
+
   for (i = 0; i < NI; i++)
     for (j = 0; j < NJ; j++)
       C[i * NJ + j] = (float)((i * j + 1) % NI) / NI;
@@ -43,7 +45,6 @@ static void print_array_sum(float C[NI * NJ])
 // =========================================================================
 static void kernel_gemm_2d_ij(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta)
 {
-  int i, j, k, ii, jj;
 
   // Outer tiled loops (i, j)
   for (i = 0; i < NI; i += BS)
@@ -81,7 +82,6 @@ static void kernel_gemm_2d_ij(float C[NI * NJ], float A[NI * NK], float B[NK * N
 // =========================================================================
 static void kernel_gemm_2d_ik(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta)
 {
-  int i, j, k, ii, kk;
 
   // Outer tiled loop (i)
   for (i = 0; i < NI; i += BS)
@@ -120,7 +120,6 @@ static void kernel_gemm_2d_ik(float C[NI * NJ], float A[NI * NK], float B[NK * N
 // =========================================================================
 static void kernel_gemm_2d_jk(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta)
 {
-  int i, j, k, jj, kk;
 
   // 'i' is NOT tiled, runs fully.
   for (i = 0; i < NI; i++)
@@ -159,7 +158,6 @@ static void kernel_gemm_2d_jk(float C[NI * NJ], float A[NI * NK], float B[NK * N
 // =========================================================================
 static void kernel_gemm_3D(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta)
 {
-  int i, j, k, ii, jj, kk;
 
   // Tiling all three (i, j, k) loops
   for (i = 0; i < NI; i += BS)
@@ -203,7 +201,6 @@ static void kernel_gemm_3D(float C[NI * NJ], float A[NI * NK], float B[NK * NJ],
 // =========================================================================
 static void kernel_gemm3D_Optmized(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta)
 {
-  int i, j, k, ii, jj, kk;
 
   // Parallel Beta Scaling
 
@@ -245,9 +242,11 @@ static void kernel_gemm3D_Optmized(float C[NI * NJ], float A[NI * NK], float B[N
   }
 }
 
+// =========================================================================
+// VARIATION 6: 3D Tiling Optimized with Vectorization
+// =========================================================================
 static void kernel_gemm_vect(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta)
 {
-  int ii, jj, kk, i, j, k;
 
   // Use a single parallel region to reduce fork/join overhead
 
@@ -291,47 +290,152 @@ static void kernel_gemm_vect(float C[NI * NJ], float A[NI * NK], float B[NK * NJ
   }
 }
 
+// =========================================================================
+// Variation 7: 3D Tiling + Optimized i-k-j Order + OpenMP + Vectorization
+// =========================================================================
+// Best Block Size found in your testing
+// static void kernel_gemm_final(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta)
+// {
 
+//   // --- TRANSFORMATION 1: Loop Fission (Splitting Beta Scaling) ---
+//   // We split this off because it is purely memory-bound.
+//   // We use 'static' schedule here because the work is perfectly uniform (no E-Core imbalance risk).
+//   #pragma omp parallel for collapse(2) schedule(dynamic) private(ii, jj, kk, i, j, k)
+//   for (i = 0; i < NI; i++) {
+//     // Vectorize the scaling (AVX2)
+//     #pragma omp simd
+//     for (j = 0; j < NJ; j++) {
+//       C[i * NJ + j] *= beta;
+//     }
+//   }
+
+//   // --- TRANSFORMATION 2: Loop Parallelization (With Hybrid Optimization) ---
+//   // "collapse(2)" merges 'ii' and 'jj' to create ~1024 tasks (instead of just 32).
+//   // "schedule(dynamic)" puts tasks in a pool. Fast P-Cores take more; Slow E-Cores take less.
+//   // This eliminates the "Straggler Problem" on your i5-13500.
+//   #pragma omp parallel private(ii, jj, kk)
+//   for (ii = 0; ii < NI; ii += BS) {
+//     for (jj = 0; jj < NJ; jj += BS) {
+
+//       // --- TRANSFORMATION 3: Loop Tiling (Blocking) ---
+//       for (kk = 0; kk < NK; kk += BS) {
+
+//         for (i = ii; i < min(ii + BS, NI); i++) {
+
+//           // Optimization: Pre-calculate row offsets to avoid integer math in inner loop
+//           int i_NK = i * NK;
+//           int i_NJ = i * NJ;
+
+//           // --- TRANSFORMATION 4: Loop Permutation (i-k-j) ---
+//           // Swapping 'j' and 'k' makes the innermost access Sequential (Stride-1).
+//           for (k = kk; k < min(kk + BS, NK); k++) {
+
+//             // Optimization: Hoist invariant load (alpha * A[i][k])
+//             float val_A = alpha * A[i_NK + k];
+//             int k_NJ = k * NJ;
+
+//             // --- TRANSFORMATION 5: Loop Vectorization ---
+//             // Forces AVX2 instructions (8 floats per cycle).
+//             #pragma omp simd
+//             for (j = jj; j < min(jj + BS, NJ); j++) {
+//               C[i_NJ + j] += val_A * B[k_NJ + j];
+//             }
+//           }
+//         }
+//       }
+//     }
+//   }
+// }
 
 // =========================================================================
-// 3D Tiling + Optimized i-k-j Order + OpenMP + Vectorization
+// Variation 8: 3D Tiling + Optimized i-k-j Order + OpenMP + Vectorization + Unrolling Strat
 // =========================================================================
-static void kernel_gemm_final(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta)
+//! Fully Optimized Code (Time = 0.7s)
+static void kernel_gemm(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta)
 {
-  int i, j, k, ii, jj, kk;
+  int i, j, k;
+  int ii, jj, kk;
 
-// Parallel Beta Scaling
-#pragma omp parallel for private(i,j)
-  for (i = 0; i < NI; i++)
-  {
-    for (j = 0; j < NJ; j++)
-    {
-      C[i * NJ + j] *= beta;
-    }
-  }
-
-// Parallel Tiled Multiplication
-#pragma omp parallel for private(ii,jj, kk, k)
+// 1. Parallelize the Outer Loops (Tiles)
+// We use collapse(2) to give OpenMP more chunks to distribute to threads.
+#pragma omp parallel for collapse(2) schedule(dynamic) private(ii, jj, kk, i, j, k)
   for (ii = 0; ii < NI; ii += BS)
   {
     for (jj = 0; jj < NJ; jj += BS)
     {
+
+      // Determine the boundaries of the current tile
+      int i_max = min(ii + BS, NI);
+      int j_max = min(jj + BS, NJ);
+
+      // 2. Beta Scaling (Merged into the tile)
+      // Do this first while the cache is fresh.
+      if (beta != 1.0f)
+      {
+        for (i = ii; i < i_max; i++)
+        {
+          if (beta == 0.0f)
+          {
+#pragma omp simd
+            for (j = jj; j < j_max; j++)
+              C[i * NJ + j] = 0.0f;
+          }
+          else
+          {
+#pragma omp simd
+            for (j = jj; j < j_max; j++)
+              C[i * NJ + j] *= beta;
+          }
+        }
+      }
+
+      // 3. Tiled Matrix Multiplication
       for (kk = 0; kk < NK; kk += BS)
       {
+        int k_max = min(kk + BS, NK);
 
-        for (i = ii; i < min(ii + BS, NI); i++)
+        // --- REGISTER BLOCKING (4 rows at a time) ---
+        // We iterate 'i' by 4.
+        for (i = ii; i < i_max - (UNROLL - 1); i += UNROLL)
         {
 
-          // Optimization: Loop Order i-k-j (K is middle)
-          for (k = kk; k < min(kk + BS, NK); k++)
+          for (k = kk; k < k_max; k++)
           {
-            float val_A = alpha * A[i * NK + k];
 
-// J is innermost (Stride-1 access) + SIMD
+            // Load 4 values from A (one for each row being processed)
+            // We multiply by alpha here to reduce work in the innermost loop.
+            float val_a0 = alpha * A[(i + 0) * NK + k];
+            float val_a1 = alpha * A[(i + 1) * NK + k];
+            float val_a2 = alpha * A[(i + 2) * NK + k];
+            float val_a3 = alpha * A[(i + 3) * NK + k];
+
+// Accessing B is now Sequential (Stride-1) because we fixed the loop order
+// B[k*NJ + j] is contiguous in memory.
 #pragma omp simd
-            for (j = jj; j < min(jj + BS, NJ); j++)
+            for (j = jj; j < j_max; j++)
             {
-              C[i * NJ + j] += val_A * B[k * NJ + j];
+              int b_idx = k * NJ + j; // Calculate index once
+              float val_b = B[b_idx];
+
+              // Update 4 rows of C simultaneously
+              C[(i + 0) * NJ + j] += val_a0 * val_b;
+              C[(i + 1) * NJ + j] += val_a1 * val_b;
+              C[(i + 2) * NJ + j] += val_a2 * val_b;
+              C[(i + 3) * NJ + j] += val_a3 * val_b;
+            }
+          }
+        }
+
+        // 4. Cleanup Loop (for remaining rows if Block Size isn't div by 4)
+        for (; i < i_max; i++)
+        {
+          for (k = kk; k < k_max; k++)
+          {
+            float val_a = alpha * A[i * NK + k];
+#pragma omp simd
+            for (j = jj; j < j_max; j++)
+            {
+              C[i * NJ + j] += val_a * B[k * NJ + j];
             }
           }
         }
@@ -339,8 +443,6 @@ static void kernel_gemm_final(float C[NI * NJ], float A[NI * NK], float B[NK * N
     }
   }
 }
-
-
 
 int main(int argc, char **argv)
 {
@@ -358,15 +460,18 @@ int main(int argc, char **argv)
   /* --- RUN THE KERNEL --- */
   /* UNCOMMENT ONE LINE BELOW TO TEST A SPECIFIC STRATEGY */
 
-  //kernel_gemm_2d_ij(C, A, B, 1.5, 2.5);        // Strategy 1: Tiling i, j
-  //kernel_gemm_2d_ik(C, A, B, 1.5, 2.5);      // Strategy 2: Tiling i, k
-  //kernel_gemm_2d_jk(C, A, B, 1.5, 2.5);      // Strategy 3: Tiling j, k
-   //kernel_gemm_3D(C, A, B, 1.5, 2.5);         // Strategy 4: Tiling i, j, k (Naive)
-  //kernel_gemm3D_Optmized(C, A, B, 1.5, 2.5);
+  // kernel_gemm_2d_ij(C, A, B, 1.5, 2.5);        // Strategy 1: Tiling i, j
+  // kernel_gemm_2d_ik(C, A, B, 1.5, 2.5);      // Strategy 2: Tiling i, k
+  // kernel_gemm_2d_jk(C, A, B, 1.5, 2.5);      // Strategy 3: Tiling j, k
+  // kernel_gemm_3D(C, A, B, 1.5, 2.5);         // Strategy 4: Tiling i, j, k (Naive)
+  // kernel_gemm3D_Optmized(C, A, B, 1.5, 2.5);
   // kernel_gemm_vect(C, A, B, 1.5, 2.5);
 
   // FINAL SUBMISSION (Fastest)
-   kernel_gemm_final(C, A, B, 1.5, 2.5);
+  //kernel_gemm_final(C, A, B, 1.5, 2.5);
+
+  //*Best Optmized Time
+   kernel_gemm(C, A, B, 1.5, 2.5);
 
   /* Stop and print timer. */
   toc(&timer, "kernel execution");
