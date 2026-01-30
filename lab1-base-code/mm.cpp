@@ -7,8 +7,12 @@
 #define NJ 4096
 #define NK 4096
 
-// Note: This CPU contains -> 6 P-Cores (Fast), 8 E-Cores (Slower), Total 20 Threads.
-// Using setenv OMP_NUM_THREADS 16 or similar in shell to control threads.
+// BS = 32 fits the 32KB/48KB L1 Cache of the i5-13500 perfecty.
+// 32 * 32 * 4 bytes = 4KB per block.
+#define BS 64
+#define min(a, b) (((a) < (b)) ? (a) : (b))
+
+// Thread control: Use "export OMP_NUM_THREADS=6" (or 12/20) in terminal
 
 /* Array initialization. */
 static void init_array(float C[NI * NJ], float A[NI * NK], float B[NK * NJ])
@@ -35,19 +39,174 @@ static void print_array_sum(float C[NI * NJ])
   printf("sum of C array = %f\n", sum);
 }
 
-// --- TILING PARAMETERS ---
-#define BS 64
-#define min(a, b) (((a) < (b)) ? (a) : (b))
-
-// ---------------------------------------------------------------------------
-// 1. FINAL OPTIMIZED VERSION (For Competition & Parallel Testing) 3D Tiling + i-k-j Order + OpenMP Parallel + SIMD Vectorization
-// ---------------------------------------------------------------------------
-static void kernel_gemm(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta)
+// =========================================================================
+// VARIATION 1: 2D Tiling (i and j loops only)
+// =========================================================================
+static void kernel_gemm_2d_ij(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta)
 {
-  int i, j, k;
-  int ii, jj, kk;
+  int i, j, k, ii, jj;
 
-// --- Step 1: Parallel Beta Scaling ---
+  // Outer tiled loops (i, j)
+  for (i = 0; i < NI; i += BS)
+  {
+    for (j = 0; j < NJ; j += BS)
+    {
+
+      // 1. Beta Scaling (done inside the tile)
+      for (ii = i; ii < min(i + BS, NI); ii++)
+      {
+        for (jj = j; jj < min(j + BS, NJ); jj++)
+        {
+          C[ii * NJ + jj] *= beta;
+        }
+      }
+
+      // 2. Matrix Multiplication
+      // Note: 'k' loop runs fully (0 to NK). This causes cache thrashing.
+      for (k = 0; k < NK; k++)
+      {
+        for (ii = i; ii < min(i + BS, NI); ii++)
+        {
+          for (jj = j; jj < min(j + BS, NJ); jj++)
+          {
+            C[ii * NJ + jj] += alpha * A[ii * NK + k] * B[k * NJ + jj];
+          }
+        }
+      }
+    }
+  }
+}
+
+// =========================================================================
+// VARIATION 2: 2D Tiling (i and k loops only)
+// =========================================================================
+static void kernel_gemm_2d_ik(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta)
+{
+  int i, j, k, ii, kk;
+
+  // Outer tiled loop (i)
+  for (i = 0; i < NI; i += BS)
+  {
+
+    // 'j' is NOT tiled, runs fully.
+    for (j = 0; j < NJ; j++)
+    {
+
+      // 1. Beta Scaling
+      for (ii = i; ii < min(i + BS, NI); ii++)
+      {
+        C[ii * NJ + j] *= beta;
+      }
+
+      // 2. Matrix Multiplication
+      // Outer tiled loop (k)
+      for (k = 0; k < NK; k += BS)
+      {
+
+        // Inner loops
+        for (ii = i; ii < min(i + BS, NI); ii++)
+        {
+          for (kk = k; kk < min(k + BS, NK); kk++)
+          {
+            C[ii * NJ + j] += alpha * A[ii * NK + kk] * B[kk * NJ + j];
+          }
+        }
+      }
+    }
+  }
+}
+
+// =========================================================================
+// VARIATION 3: 2D Tiling (j and k loops only)
+// =========================================================================
+static void kernel_gemm_2d_jk(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta)
+{
+  int i, j, k, jj, kk;
+
+  // 'i' is NOT tiled, runs fully.
+  for (i = 0; i < NI; i++)
+  {
+
+    // Outer tiled loop (j)
+    for (j = 0; j < NJ; j += BS)
+    {
+
+      // 1. Beta Scaling
+      for (jj = j; jj < min(j + BS, NJ); jj++)
+      {
+        C[i * NJ + jj] *= beta;
+      }
+
+      // 2. Matrix Multiplication
+      // Outer tiled loop (k)
+      for (k = 0; k < NK; k += BS)
+      {
+
+        // Inner loops
+        for (jj = j; jj < min(j + BS, NJ); jj++)
+        {
+          for (kk = k; kk < min(k + BS, NK); kk++)
+          {
+            C[i * NJ + jj] += alpha * A[i * NK + kk] * B[kk * NJ + jj];
+          }
+        }
+      }
+    }
+  }
+}
+
+// =========================================================================
+// VARIATION 4: 3D Tiling (Naive Loop Order)
+// =========================================================================
+static void kernel_gemm_3d_naive(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta)
+{
+  int i, j, k, ii, jj, kk;
+
+  // Tiling all three (i, j, k) loops
+  for (i = 0; i < NI; i += BS)
+  {
+    for (j = 0; j < NJ; j += BS)
+    {
+
+      // 1. Beta Scaling
+      for (ii = i; ii < min(i + BS, NI); ii++)
+      {
+        for (jj = j; jj < min(j + BS, NJ); jj++)
+        {
+          C[ii * NJ + jj] *= beta;
+        }
+      }
+
+      // 2. Matrix Multiplication
+      for (k = 0; k < NK; k += BS)
+      {
+
+        // Inner Loops: ii -> jj -> kk
+        // This is "Naive" because accessing B[kk][jj] inside the innermost loop
+        // might not be contiguous if loop orders aren't perfect.
+        for (ii = i; ii < min(i + BS, NI); ii++)
+        {
+          for (jj = j; jj < min(j + BS, NJ); jj++)
+          {
+            for (kk = k; kk < min(k + BS, NK); kk++)
+            {
+              C[ii * NJ + jj] += alpha * A[ii * NK + kk] * B[kk * NJ + jj];
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+// =========================================================================
+// 3D Tiling + Optimized i-k-j Order + OpenMP + Vectorization
+// =========================================================================
+static void kernel_gemm_final(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta)
+{
+  int i, j, k, ii, jj, kk;
+
+// Parallel Beta Scaling
 #pragma omp parallel for private(i, j)
   for (i = 0; i < NI; i++)
   {
@@ -57,8 +216,8 @@ static void kernel_gemm(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], fl
     }
   }
 
-// --- Step 2: Parallel Tiled Matrix Multiplication ---
-#pragma omp parallel for private(jj, kk, i, j, k)
+// Parallel Tiled Multiplication
+#pragma omp parallel for private(jj, kk, i, j, k) 
   for (ii = 0; ii < NI; ii += BS)
   {
     for (jj = 0; jj < NJ; jj += BS)
@@ -66,102 +225,20 @@ static void kernel_gemm(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], fl
       for (kk = 0; kk < NK; kk += BS)
       {
 
-        // Inner Tile Loops
         for (i = ii; i < min(ii + BS, NI); i++)
         {
 
-          // Optimization: Loop Order i-k-j
-          // 'k' loop is middle. This allows us to load A once and reuse it across 'j'.
+          // Optimization: Loop Order i-k-j (K is middle)
           for (k = kk; k < min(kk + BS, NK); k++)
           {
-
             float val_A = alpha * A[i * NK + k];
 
-// 'j' loop is innermost. This is Stride-1 access (Sequential).
-// Perfect for Vectorization.
+// J is innermost (Stride-1 access) + SIMD
 #pragma omp simd
             for (j = jj; j < min(jj + BS, NJ); j++)
             {
               C[i * NJ + j] += val_A * B[k * NJ + j];
             }
-          }
-        }
-      }
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 2. STRATEGY 1: 2D TILING (For Report Comparison)
-// ---------------------------------------------------------------------------
-static void kernel_gemm_2d(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta)
-{
-  int i, j, k;
-  int ii, jj; // No kk loop here
-
-  // Beta Scaling
-  for (i = 0; i < NI; i++)
-    for (j = 0; j < NJ; j++)
-      C[i * NJ + j] *= beta;
-
-  // 2D Tiling (Block i and j)
-  for (ii = 0; ii < NI; ii += BS)
-  {
-    for (jj = 0; jj < NJ; jj += BS)
-    {
-
-      // Tile Processing
-      for (i = ii; i < min(ii + BS, NI); i++)
-      {
-        for (j = jj; j < min(jj + BS, NJ); j++)
-        {
-
-          float sum = 0.0f;
-          for (k = 0; k < NK; k++)
-          {
-            sum += A[i * NK + k] * B[k * NJ + j];
-          }
-          C[i * NJ + j] += alpha * sum;
-        }
-      }
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 3. STRATEGY 2: 3D TILING NAIVE (For Report Comparison)
-// ---------------------------------------------------------------------------
-static void kernel_gemm_3d_naive(float C[NI * NJ], float A[NI * NK], float B[NK * NJ], float alpha, float beta)
-{
-  int i, j, k;
-  int ii, jj, kk;
-
-  // Beta Scaling
-  for (i = 0; i < NI; i++)
-    for (j = 0; j < NJ; j++)
-      C[i * NJ + j] *= beta;
-
-  // 3D Tiling
-  for (ii = 0; ii < NI; ii += BS)
-  {
-    for (jj = 0; jj < NJ; jj += BS)
-    {
-      for (kk = 0; kk < NK; kk += BS)
-      {
-
-        // NAIVE LOOP ORDER: i -> j -> k
-        // This is bad because B[k][j] access jumps across memory (Stride-N)
-        for (i = ii; i < min(ii + BS, NI); i++)
-        {
-          for (j = jj; j < min(jj + BS, NJ); j++)
-          {
-
-            float sum = 0.0f;
-            for (k = kk; k < min(kk + BS, NK); k++)
-            {
-              sum += A[i * NK + k] * B[k * NJ + j];
-            }
-            C[i * NJ + j] += alpha * sum;
           }
         }
       }
@@ -183,17 +260,15 @@ int main(int argc, char **argv)
   timespec timer = tic();
 
   /* --- RUN THE KERNEL --- */
+  /* UNCOMMENT ONE LINE BELOW TO TEST A SPECIFIC STRATEGY */
 
-  // UNCOMMENT THE VERSION YOU WANT TO TEST:
+  // kernel_gemm_2d_ij(C, A, B, 1.5, 2.5);      // Strategy 1: Tiling i, j
+  // kernel_gemm_2d_ik(C, A, B, 1.5, 2.5);      // Strategy 2: Tiling i, k
+  // kernel_gemm_2d_jk(C, A, B, 1.5, 2.5);      // Strategy 3: Tiling j, k
+  // kernel_gemm_3d_naive(C, A, B, 1.5, 2.5);   // Strategy 4: Tiling i, j, k (Naive)
 
-  // 1. Final Version (For Competition & Parallel Testing)
-  kernel_gemm(C, A, B, 1.5, 2.5);
-
-  // 2. 2D Tiling Strategy (For Report - Strategy 1)
-  // kernel_gemm_2d(C, A, B, 1.5, 2.5);
-
-  // 3. 3D Naive Strategy (For Report - Strategy 2)
-  // kernel_gemm_3d_naive(C, A, B, 1.5, 2.5);
+  // FINAL SUBMISSION (Fastest)
+  kernel_gemm_final(C, A, B, 1.5, 2.5);
 
   /* Stop and print timer. */
   toc(&timer, "kernel execution");
